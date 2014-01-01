@@ -61,4 +61,37 @@ func init() {
 
 ```
 
+Now you have available in your other files in revel a handle to the redis cluster.
+
+You can access it as so, say you have a file app/models/person.go
+
+```go
+
+package models
+
+import "github.com/garyburd/redigo/redis"
+import "github.com/cowboyrushforth/redigocluster/rediscluster"
+
+type Person struct {
+  Name string
+}
+
+type (self *Person) IncrementLoginCount() (int64, error) {
+  // rediscluster.Do has the same signature as redis.Do
+  return redis.Int64(rediscluster.Do("INCR", "person:"+self.Name+":login_count"))
+}
+
+```
+
+if you then ran something like
+
+```go
+
+person := Person{Name: 'John Doe'}
+num_logins, err := person.IncrementLoginCount()
+
+```
+
+More documentation for this specific example you may want to check out here at [redigo's docs here](http://godoc.org/github.com/garyburd/redigo/redis#Int64)
+
 
