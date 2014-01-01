@@ -24,10 +24,12 @@ Example for use in Revel
 
 Place the following in your configuration file:
 
+```
 redis1.host="1.2.3.4"
 redis1.port="6379"
 redis2.host="1.2.3.5"
 redis2.port="6379"
+```
 
 Then make an addition to your app's init.go.
 
