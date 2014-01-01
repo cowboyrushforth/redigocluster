@@ -31,6 +31,8 @@ redis2.port="6379"
 
 Then make an addition to your app's init.go.
 
+```go
+
 import "github.com/cowboyrushforth/rediscluster"
 
 func init() {
@@ -57,6 +59,6 @@ func init() {
   })
 }
 
-
+```
 
 
