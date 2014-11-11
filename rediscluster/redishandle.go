@@ -12,14 +12,14 @@ type RedisHandle struct {
 }
 
 // XXX: add some password protection
-func NewRedisHandle(host string, port string, debug bool) (*RedisHandle) {
+func NewRedisHandle(host string, port string, max_active int, debug bool) (*RedisHandle) {
   if debug {
     fmt.Println("[RedisHandle] Opening New Handle For Pid:", os.Getpid())
   }
   return &RedisHandle{Host: host,
                       Port: port,
                       Pool:  &redis.Pool{MaxIdle: 10,
-                                         MaxActive: 120,
+                                         MaxActive: max_active,
                                          IdleTimeout: 30 * time.Second,
                                          Dial: func() (redis.Conn, error) {
                                           c, err := redis.Dial("tcp", host+":"+port)

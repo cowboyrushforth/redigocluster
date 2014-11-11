@@ -17,15 +17,17 @@ type RedisCluster struct {
   Slots    map[uint16]string
   RefreshTableASAP bool
   SingleRedisMode bool
+  MaxActive int
   Debug bool
 }
 
-func NewRedisCluster(seed_redii []map[string]string, debug bool) RedisCluster {
+func NewRedisCluster(seed_redii []map[string]string, max_active int, debug bool) RedisCluster {
   cluster := RedisCluster{RefreshTableASAP: false,
   SingleRedisMode: false,
   SeedHosts: make(map[string]bool),
   Handles: make(map[string]*RedisHandle),
   Slots: make(map[uint16]string),
+  MaxActive: max_active,
   Debug: debug}
 
   if cluster.Debug {
@@ -36,12 +38,12 @@ func NewRedisCluster(seed_redii []map[string]string, debug bool) RedisCluster {
     for host, port := range redis {
       label := host+":"+port
       cluster.SeedHosts[label] = true
-      cluster.Handles[label] = NewRedisHandle(host, port, debug)
+      cluster.Handles[label] = NewRedisHandle(host, port, max_active, debug)
     }
   }
 
   for addr,_ := range cluster.SeedHosts {
-    node := cluster.addRedisHandleIfNeeded(addr)
+    node := cluster.addRedisHandleIfNeeded(addr, max_active)
     cluster_enabled := cluster.hasClusterEnabled(node)
     if cluster_enabled == false {
       if len(cluster.SeedHosts) == 1 {
@@ -150,7 +152,7 @@ func (self *RedisCluster) addRedisHandleIfNeeded(addr string) *RedisHandle {
   _, handle_exists := self.Handles[addr]
   if !handle_exists {
     pieces := strings.Split(addr, ":")
-    self.Handles[addr] = NewRedisHandle(pieces[0], pieces[1], self.Debug)
+    self.Handles[addr] = NewRedisHandle(pieces[0], pieces[1], self.MaxActive, self.Debug)
   }
   return self.Handles[addr]
 }
@@ -220,7 +222,7 @@ func (self *RedisCluster) RedisHandleForSlot(slot uint16) *RedisHandle {
   // add to cluster if not in cluster
   if !cx_exists {
     pieces := strings.Split(node, ":")
-    self.Handles[node] = NewRedisHandle(pieces[0], pieces[1], self.Debug)
+    self.Handles[node] = NewRedisHandle(pieces[0], pieces[1], self.MaxActive, self.Debug)
     // XXX consider returning random if failure
   }
   return self.Handles[node]
