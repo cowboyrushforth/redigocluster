@@ -43,7 +43,7 @@ func NewRedisCluster(seed_redii []map[string]string, max_active int, debug bool)
   }
 
   for addr,_ := range cluster.SeedHosts {
-    node := cluster.addRedisHandleIfNeeded(addr, max_active)
+    node := cluster.addRedisHandleIfNeeded(addr)
     cluster_enabled := cluster.hasClusterEnabled(node)
     if cluster_enabled == false {
       if len(cluster.SeedHosts) == 1 {
