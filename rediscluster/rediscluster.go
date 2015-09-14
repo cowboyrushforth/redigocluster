@@ -23,14 +23,21 @@ type RedisCluster struct {
 	Debug            bool
 }
 
+type ClusterTransaction struct {
+	Cmd  string
+	Args []interface{}
+}
+
 func NewRedisCluster(seed_redii []map[string]string, poolConfig PoolConfig, debug bool) RedisCluster {
-	cluster := RedisCluster{RefreshTableASAP: false,
-		SingleRedisMode: false,
-		SeedHosts:       make(map[string]bool),
-		Handles:         make(map[string]*RedisHandle),
-		Slots:           make(map[uint16]string),
-		poolConfig:      poolConfig,
-		Debug:           debug}
+	cluster := RedisCluster{
+		RefreshTableASAP: false,
+		SingleRedisMode:  !poolConfig.IsCluster,
+		SeedHosts:        make(map[string]bool),
+		Handles:          make(map[string]*RedisHandle),
+		Slots:            make(map[uint16]string),
+		poolConfig:       poolConfig,
+		Debug:            debug,
+	}
 
 	if cluster.Debug {
 		log.Info("[RedisCluster], PID", os.Getpid(), "StartingNewRedisCluster")
@@ -179,6 +186,17 @@ func (self *RedisCluster) KeyForRequest(cmd string, args ...interface{}) string 
 	return ""
 }
 
+func (self *RedisCluster) KeyForTransaction(cmds []ClusterTransaction) string {
+	for _, cmd := range cmds {
+		key := self.KeyForRequest(cmd.Cmd, cmd.Args)
+		if key != "" {
+			log.Debug("Found key for transaction: ", key)
+			return key
+		}
+	}
+	return ""
+}
+
 // Return the hash slot from the key.
 func (self *RedisCluster) SlotForKey(key string) uint16 {
 	checksum := ChecksumCRC16([]byte(key))
@@ -256,6 +274,130 @@ func (self *RedisCluster) handleSingleMode(flush bool, cmd string, args ...inter
 	return nil, errors.New("no redis handle found for single mode")
 }
 
+func (self *RedisCluster) HandleTableRefresh() {
+	if self.Debug {
+		log.Info("[RedisCluster] Refresh Needed")
+	}
+	self.disconnectAll()
+	self.populateSlotsCache()
+	self.RefreshTableASAP = false
+}
+
+func (self *RedisCluster) SendClusterTransaction(cmds []ClusterTransaction) (reply interface{}, err error) {
+
+	// forward onto first redis in the handle
+	// if we are set to single mode
+	if self.SingleRedisMode == true {
+		for _, handle := range self.Handles {
+			log.Debug("Running transaction...")
+			return handle.DoTransaction(cmds)
+		}
+	}
+
+	if self.RefreshTableASAP == true {
+		self.HandleTableRefresh()
+		if self.SingleRedisMode == true {
+			for _, handle := range self.Handles {
+				return handle.DoTransaction(cmds)
+			}
+		}
+	}
+
+	ttl := RedisClusterRequestTTL
+	// Transactions are only for a ingle KEY for us here...
+	key := self.KeyForTransaction(cmds)
+	try_random_node := false
+	asking := false
+	for {
+		if ttl <= 0 {
+			break
+		}
+		ttl -= 1
+		if key == "" {
+			panic(errors.New("no way to dispatch this type of command to redis cluster"))
+		}
+		slot := self.SlotForKey(key)
+
+		var redis *RedisHandle
+
+		if self.Debug {
+			log.Info("[RedisCluster] slot: ", slot, "key", key, "ttl", ttl)
+		}
+
+		if try_random_node {
+			if self.Debug {
+				log.Info("[RedisCluster] Trying Random Node")
+			}
+			redis = self.RandomRedisHandle()
+			try_random_node = false
+		} else {
+			if self.Debug {
+				log.Info("[RedisCluster] Trying Specific Node")
+			}
+			redis = self.RedisHandleForSlot(slot)
+		}
+
+		if redis == nil {
+			if self.Debug {
+				log.Info("[RedisCluster] could not get redis handle, bailing this round")
+			}
+			break
+		}
+		if self.Debug {
+			log.Info("[RedisCluster] Got Host/Port: ", redis.Host, redis.Port)
+		}
+
+		if asking {
+			if self.Debug {
+				log.Info("ASKING")
+			}
+			redis.Send("ASKING")
+			asking = false
+		}
+
+		var err error
+		var resp interface{}
+
+		resp, err = redis.DoTransaction(cmds)
+		if err == nil {
+			if self.Debug {
+				log.Info("[RedisCluster] Success")
+			}
+			return resp, nil
+		}
+
+		// ok we are here so err is not nil
+		errv := strings.Split(err.Error(), " ")
+		if errv[0] == "MOVED" || errv[0] == "ASK" {
+			if errv[0] == "ASK" {
+				if self.Debug {
+					log.Info("[RedisCluster] ASK")
+				}
+				asking = true
+			} else {
+				// Serve replied with MOVED. It's better for us to
+				// ask for CLUSTER NODES the next time.
+				SetRefreshNeeded()
+				newslot, _ := strconv.Atoi(errv[1])
+				newaddr := errv[2]
+				self.Slots[uint16(newslot)] = newaddr
+				if self.Debug {
+					log.Info("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", len(self.Slots))
+				}
+			}
+		} else {
+			if self.Debug {
+				log.Info("[RedisCluster] Other Error: ", err.Error())
+			}
+			try_random_node = true
+		}
+	}
+	if self.Debug {
+		log.Info("[RedisCluster] Failed Command")
+	}
+	return nil, errors.New("could not complete command")
+}
+
 func (self *RedisCluster) SendClusterCommand(flush bool, cmd string, args ...interface{}) (reply interface{}, err error) {
 
 	// forward onto first redis in the handle
@@ -265,12 +407,7 @@ func (self *RedisCluster) SendClusterCommand(flush bool, cmd string, args ...int
 	}
 
 	if self.RefreshTableASAP == true {
-		if self.Debug {
-			log.Info("[RedisCluster] Refresh Needed")
-		}
-		self.disconnectAll()
-		self.populateSlotsCache()
-		self.RefreshTableASAP = false
+		self.HandleTableRefresh()
 		// in case we realized we were now in Single Mode
 		if self.SingleRedisMode == true {
 			return self.handleSingleMode(flush, cmd, args...)
@@ -383,6 +520,10 @@ func (self *RedisCluster) SendClusterCommand(flush bool, cmd string, args ...int
 
 func (self *RedisCluster) Do(cmd string, args ...interface{}) (reply interface{}, err error) {
 	return self.SendClusterCommand(true, cmd, args...)
+}
+
+func (self *RedisCluster) DoTransaction(cmds []ClusterTransaction) (reply interface{}, err error) {
+	return self.SendClusterTransaction(cmds)
 }
 
 func (self *RedisCluster) Send(cmd string, args ...interface{}) (err error) {

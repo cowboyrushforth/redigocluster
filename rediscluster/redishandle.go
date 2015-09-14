@@ -16,6 +16,7 @@ type PoolConfig struct {
 	IdleTimeout time.Duration
 	Password    string
 	Database    int
+	IsCluster   bool
 }
 
 // XXX: add some password protection - DONE
@@ -79,4 +80,17 @@ func (self *RedisHandle) Do(commandName string, args ...interface{}) (reply inte
 func (self *RedisHandle) Send(cmd string, args ...interface{}) (err error) {
 	rc := self.GetRedisConn()
 	return rc.Send(cmd, args...)
+}
+
+func (self *RedisHandle) DoTransaction(cmds []ClusterTransaction) (reply interface{}, err error) {
+	rc := self.GetRedisConn()
+	defer rc.Close()
+	rc.Send("MULTI")
+	for _, cmd := range cmds {
+		sendErr := rc.Send(cmd.Cmd, cmd.Args...)
+		if sendErr != nil {
+			log.Error("Transacton failed: ", sendErr)
+		}
+	}
+	return rc.Do("EXEC")
 }
