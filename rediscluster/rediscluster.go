@@ -40,7 +40,7 @@ func NewRedisCluster(seed_redii []map[string]string, poolConfig PoolConfig, debu
 	}
 
 	if cluster.Debug {
-		log.Info("[RedisCluster], PID", os.Getpid(), "StartingNewRedisCluster")
+		log.Debug("[RedisCluster], PID", os.Getpid(), "StartingNewRedisCluster")
 	}
 
 	for _, redis := range seed_redii {
@@ -246,6 +246,13 @@ func (self *RedisCluster) RedisHandleForSlot(slot uint16) *RedisHandle {
 		// XXX consider returning random if failure
 	}
 	return self.Handles[node]
+}
+
+func (self *RedisCluster) CloseConnection() {
+	// If redis is down on start this may not exist
+	if self != nil {
+		self.disconnectAll()
+	}
 }
 
 func (self *RedisCluster) disconnectAll() {

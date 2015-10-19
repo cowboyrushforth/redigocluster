@@ -56,6 +56,7 @@ func NewRedisHandle(host string, port string, poolConfig PoolConfig, debug bool)
 }
 
 func (self *RedisHandle) GetRedisConn() redis.Conn {
+	log.Debug("Active TCP connections", self.Pool.ActiveCount())
 	rc := self.Pool.Get()
 	for i := 0; i < 6; i++ {
 		err := rc.Err()
