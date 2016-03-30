@@ -95,3 +95,32 @@ func (self *RedisHandle) DoTransaction(cmds []ClusterTransaction) (reply interfa
 	}
 	return rc.Do("EXEC")
 }
+
+func (self *RedisHandle) DoPipeline(cmds []ClusterTransaction) (reply interface{}, err error) {
+	rc := self.GetRedisConn()
+	defer rc.Close()
+	var wasError bool
+	var transErr error
+	var rets []interface{} = make([]interface{}, len(cmds))
+	for _, cmd := range cmds {
+		sendErr := rc.Send(cmd.Cmd, cmd.Args...)
+		if sendErr != nil {
+			log.Error("Pipeline failed: ", sendErr)
+			wasError = true
+			transErr = err
+		}
+	}
+	rc.Flush()
+
+	if !wasError {
+		var newErr error
+		for c := 0; c < (len(cmds) - 1); c++ {
+			rets[c], newErr = rc.Receive()
+			if newErr != nil {
+				log.Error(newErr)
+			}
+		}
+	}
+
+	return rets, transErr
+}
