@@ -181,7 +181,13 @@ func (self *RedisCluster) KeyForRequest(cmd string, args ...interface{}) string 
 	}
 	strs := args[0].([]interface{})
 	if strs != nil && strs[0] != nil {
-		return strs[0].(string)
+		switch strs[0].(type) {
+		case string:
+			return strs[0].(string)
+		case int:
+			asStr := strconv.Itoa(strs[0].(int))
+			return asStr
+		}
 	}
 	return ""
 }
