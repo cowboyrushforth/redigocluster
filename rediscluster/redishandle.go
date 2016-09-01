@@ -91,6 +91,7 @@ func (self *RedisHandle) DoTransaction(cmds []ClusterTransaction) (reply interfa
 		sendErr := rc.Send(cmd.Cmd, cmd.Args...)
 		if sendErr != nil {
 			log.Error("Transacton failed: ", sendErr)
+			break
 		}
 	}
 	return rc.Do("EXEC")
@@ -108,6 +109,7 @@ func (self *RedisHandle) DoPipeline(cmds []ClusterTransaction) (reply interface{
 			log.Error("Pipeline failed: ", sendErr)
 			wasError = true
 			transErr = err
+			break
 		}
 	}
 	rc.Flush()

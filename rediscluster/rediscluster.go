@@ -58,7 +58,7 @@ func NewRedisCluster(seed_redii []map[string]string, poolConfig PoolConfig, debu
 			if len(cluster.SeedHosts) == 1 {
 				cluster.SingleRedisMode = true
 			} else {
-				panic(errors.New("Multiple Seed Hosts Given, But Cluster Support Disabled in Redis"))
+				log.Fatal(errors.New("Multiple Seed Hosts Given, But Cluster Support Disabled in Redis"))
 			}
 		}
 	}
@@ -327,7 +327,7 @@ func (self *RedisCluster) SendClusterTransaction(cmds []ClusterTransaction) (rep
 		}
 		ttl -= 1
 		if key == "" {
-			panic(errors.New("no way to dispatch this type of command to redis cluster"))
+			log.Error(errors.New("no way to dispatch this type of command to redis cluster"))
 		}
 		slot := self.SlotForKey(key)
 
@@ -442,7 +442,7 @@ func (self *RedisCluster) SendClusterPipeline(cmds []ClusterTransaction) (reply 
 		}
 		ttl -= 1
 		if key == "" {
-			panic(errors.New("no way to dispatch this type of command to redis cluster"))
+			log.Error(errors.New("no way to dispatch this type of command to redis cluster"))
 		}
 		slot := self.SlotForKey(key)
 
@@ -552,7 +552,7 @@ func (self *RedisCluster) SendClusterCommand(flush bool, cmd string, args ...int
 		}
 		ttl -= 1
 		if key == "" {
-			panic(errors.New("no way to dispatch this type of command to redis cluster"))
+			log.Error(errors.New("no way to dispatch this type of command to redis cluster"))
 		}
 		slot := self.SlotForKey(key)
 
