@@ -7,6 +7,7 @@ import "math/rand"
 import "os"
 import "github.com/Sirupsen/logrus"
 import "github.com/streamrail/concurrent-map"
+import iMap "github.com/TykTechnologies/concurrent-map"
 
 const RedisClusterHashSlots = 16384
 const RedisClusterRequestTTL = 16
@@ -17,7 +18,7 @@ var log = logrus.New()
 type RedisCluster struct {
 	SeedHosts        cmap.ConcurrentMap //map[string]bool
 	Handles          cmap.ConcurrentMap // map[string]*RedisHandle
-	Slots            map[uint16]string
+	Slots            iMap.ConcurrentMap //map[uint16]string
 	RefreshTableASAP bool
 	SingleRedisMode  bool
 	poolConfig       PoolConfig
@@ -35,7 +36,7 @@ func NewRedisCluster(seed_redii []map[string]string, poolConfig PoolConfig, debu
 		SingleRedisMode:  !poolConfig.IsCluster,
 		SeedHosts:        cmap.New(), //make(map[string]bool),
 		Handles:          cmap.New(), //make(map[string]*RedisHandle),
-		Slots:            make(map[uint16]string),
+		Slots:            iMap.New(), // make(map[uint16]string),
 		poolConfig:       poolConfig,
 		Debug:            debug,
 	}
@@ -126,7 +127,7 @@ func (self *RedisCluster) populateSlotsCache() {
 							min, _ := strconv.Atoi(r_pieces[0])
 							max, _ := strconv.Atoi(r_pieces[1])
 							for i := min; i <= max; i++ {
-								self.Slots[uint16(i)] = addr
+								self.Slots.Set(uint16(i), addr)
 							}
 						}
 					}
@@ -242,7 +243,7 @@ func (self *RedisCluster) RandomRedisHandle() *RedisHandle {
 // one.
 func (self *RedisCluster) RedisHandleForSlot(slot uint16) *RedisHandle {
 
-	node, exists := self.Slots[slot]
+	node, exists := self.Slots.Get(slot)
 	// If we don't know what the mapping is, return a random node.
 	if !exists {
 		if self.Debug {
@@ -251,15 +252,15 @@ func (self *RedisCluster) RedisHandleForSlot(slot uint16) *RedisHandle {
 		return self.RandomRedisHandle()
 	}
 
-	cx_exists := self.Handles.Has(node)
+	cx_exists := self.Handles.Has(node.(string))
 	// add to cluster if not in cluster
 	if !cx_exists {
-		pieces := strings.Split(node, ":")
-		self.Handles.Set(node, NewRedisHandle(pieces[0], pieces[1], self.poolConfig, self.Debug))
+		pieces := strings.Split(node.(string), ":")
+		self.Handles.Set(node.(string), NewRedisHandle(pieces[0], pieces[1], self.poolConfig, self.Debug))
 		// XXX consider returning random if failure
 	}
 
-	handle, _ := self.Handles.Get(node)
+	handle, _ := self.Handles.Get(node.(string))
 	return handle.(*RedisHandle)
 }
 
@@ -286,7 +287,7 @@ func (self *RedisCluster) disconnectAll() {
 		self.Handles.Remove(item.Key)
 	}
 	// nuke slots
-	self.Slots = make(map[uint16]string)
+	self.Slots = iMap.New()
 }
 
 func (self *RedisCluster) handleSingleMode(flush bool, cmd string, args ...interface{}) (reply interface{}, err error) {
@@ -408,7 +409,7 @@ func (self *RedisCluster) SendClusterTransaction(cmds []ClusterTransaction) (rep
 				SetRefreshNeeded()
 				newslot, _ := strconv.Atoi(errv[1])
 				newaddr := errv[2]
-				self.Slots[uint16(newslot)] = newaddr
+				self.Slots.Set(uint16(newslot), newaddr)
 				if self.Debug {
 					log.Info("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", len(self.Slots))
 				}
@@ -525,7 +526,7 @@ func (self *RedisCluster) SendClusterPipeline(cmds []ClusterTransaction) (reply 
 				SetRefreshNeeded()
 				newslot, _ := strconv.Atoi(errv[1])
 				newaddr := errv[2]
-				self.Slots[uint16(newslot)] = newaddr
+				self.Slots.Set(uint16(newslot), newaddr)
 				if self.Debug {
 					log.Info("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", len(self.Slots))
 				}
@@ -645,7 +646,7 @@ func (self *RedisCluster) SendClusterCommand(flush bool, cmd string, args ...int
 				SetRefreshNeeded()
 				newslot, _ := strconv.Atoi(errv[1])
 				newaddr := errv[2]
-				self.Slots[uint16(newslot)] = newaddr
+				self.Slots.Set(uint16(newslot), newaddr)
 				if self.Debug {
 					log.Info("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", len(self.Slots))
 				}
