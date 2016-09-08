@@ -16,7 +16,7 @@ var log = logrus.New()
 
 type RedisCluster struct {
 	SeedHosts        cmap.ConcurrentMap //map[string]bool
-	Handles          map[string]*RedisHandle
+	Handles          cmap.ConcurrentMap // map[string]*RedisHandle
 	Slots            map[uint16]string
 	RefreshTableASAP bool
 	SingleRedisMode  bool
@@ -34,7 +34,7 @@ func NewRedisCluster(seed_redii []map[string]string, poolConfig PoolConfig, debu
 		RefreshTableASAP: false,
 		SingleRedisMode:  !poolConfig.IsCluster,
 		SeedHosts:        cmap.New(), //make(map[string]bool),
-		Handles:          make(map[string]*RedisHandle),
+		Handles:          cmap.New(), //make(map[string]*RedisHandle),
 		Slots:            make(map[uint16]string),
 		poolConfig:       poolConfig,
 		Debug:            debug,
@@ -48,7 +48,7 @@ func NewRedisCluster(seed_redii []map[string]string, poolConfig PoolConfig, debu
 		for host, port := range redis {
 			label := host + ":" + port
 			cluster.SeedHosts.Set(label, true)
-			cluster.Handles[label] = NewRedisHandle(host, port, poolConfig, debug)
+			cluster.Handles.Set(label, NewRedisHandle(host, port, poolConfig, debug))
 		}
 	}
 
@@ -151,8 +151,9 @@ func (self *RedisCluster) switchToSingleModeIfNeeded() {
 	if len(self.SeedHosts) == 1 &&
 		len(self.Slots) == 0 &&
 		len(self.Handles) == 1 {
-		for _, node := range self.Handles {
-			cluster_enabled := self.hasClusterEnabled(node)
+		//for _, node := range self.Handles {
+		for item := range self.Handles.Iter() {
+			cluster_enabled := self.hasClusterEnabled(item.Val.(*RedisHandle))
 			if cluster_enabled == false {
 				self.SingleRedisMode = true
 			}
@@ -161,12 +162,14 @@ func (self *RedisCluster) switchToSingleModeIfNeeded() {
 }
 
 func (self *RedisCluster) addRedisHandleIfNeeded(addr string) *RedisHandle {
-	_, handle_exists := self.Handles[addr]
+	handle_exists := self.Handles.Has(addr)
 	if !handle_exists {
 		pieces := strings.Split(addr, ":")
-		self.Handles[addr] = NewRedisHandle(pieces[0], pieces[1], self.poolConfig, self.Debug)
+		self.Handles.Set(addr, NewRedisHandle(pieces[0], pieces[1], self.poolConfig, self.Debug))
 	}
-	return self.Handles[addr]
+
+	item, _ := self.Handles.Get(addr)
+	return item.(*RedisHandle)
 }
 
 func (self *RedisCluster) KeyForRequest(cmd string, args ...interface{}) string {
@@ -219,8 +222,9 @@ func (self *RedisCluster) RandomRedisHandle() *RedisHandle {
 	}
 	addrs := make([]string, len(self.Handles))
 	i := 0
-	for addr, _ := range self.Handles {
-		addrs[i] = addr
+	//for addr, _ := range self.Handles {
+	for item := range self.Handles.Iter() {
+		addrs[i] = item.Key
 		i++
 	}
 	rand_addrs := make([]string, i)
@@ -228,9 +232,9 @@ func (self *RedisCluster) RandomRedisHandle() *RedisHandle {
 	for j, v := range perm {
 		rand_addrs[v] = addrs[j]
 	}
-	handle := self.Handles[rand_addrs[0]]
+	handle, _ := self.Handles.Get(rand_addrs[0])
 	self.switchToSingleModeIfNeeded()
-	return handle
+	return handle.(*RedisHandle)
 }
 
 // Given a slot return the link (Redis instance) to the mapped node.
@@ -247,14 +251,16 @@ func (self *RedisCluster) RedisHandleForSlot(slot uint16) *RedisHandle {
 		return self.RandomRedisHandle()
 	}
 
-	_, cx_exists := self.Handles[node]
+	cx_exists := self.Handles.Has(node)
 	// add to cluster if not in cluster
 	if !cx_exists {
 		pieces := strings.Split(node, ":")
-		self.Handles[node] = NewRedisHandle(pieces[0], pieces[1], self.poolConfig, self.Debug)
+		self.Handles.Set(node, NewRedisHandle(pieces[0], pieces[1], self.poolConfig, self.Debug))
 		// XXX consider returning random if failure
 	}
-	return self.Handles[node]
+
+	handle, _ := self.Handles.Get(node)
+	return handle.(*RedisHandle)
 }
 
 func (self *RedisCluster) CloseConnection() {
@@ -269,24 +275,27 @@ func (self *RedisCluster) disconnectAll() {
 		log.Info("[RedisCluster] PID:", os.Getpid(), " [Disconnect!] Had Handles:", len(self.Handles))
 	}
 	// disconnect anyone in handles
-	for _, handle := range self.Handles {
-		handle.Pool.Close()
+	// for _, handle := range self.Handles {
+	for item := range self.Handles.Iter() {
+		item.Val.(*RedisHandle).Pool.Close()
 	}
 	// nuke handles
 	//for addr, _ := range self.SeedHosts {
 	for item := range self.SeedHosts.Iter() {
-		delete(self.Handles, item.Key)
+		// delete(self.Handles, item.Key)
+		self.Handles.Remove(item.Key)
 	}
 	// nuke slots
 	self.Slots = make(map[uint16]string)
 }
 
 func (self *RedisCluster) handleSingleMode(flush bool, cmd string, args ...interface{}) (reply interface{}, err error) {
-	for _, handle := range self.Handles {
+	// for _, handle := range self.Handles {
+	for item := range self.Handles.Iter() {
 		if flush {
-			return handle.Do(cmd, args...)
+			return item.Val.(*RedisHandle).Do(cmd, args...)
 		}
-		return nil, handle.Send(cmd, args...)
+		return nil, item.Val.(*RedisHandle).Send(cmd, args...)
 	}
 	return nil, errors.New("no redis handle found for single mode")
 }
@@ -305,17 +314,19 @@ func (self *RedisCluster) SendClusterTransaction(cmds []ClusterTransaction) (rep
 	// forward onto first redis in the handle
 	// if we are set to single mode
 	if self.SingleRedisMode == true {
-		for _, handle := range self.Handles {
+		// for _, handle := range self.Handles {
+		for item := range self.Handles.Iter() {
 			log.Debug("Running transaction...")
-			return handle.DoTransaction(cmds)
+			return item.Val.(*RedisHandle).DoTransaction(cmds)
 		}
 	}
 
 	if self.RefreshTableASAP == true {
 		self.HandleTableRefresh()
 		if self.SingleRedisMode == true {
-			for _, handle := range self.Handles {
-				return handle.DoTransaction(cmds)
+			// for _, handle := range self.Handles {
+			for item := range self.Handles.Iter() {
+				return item.Val.(*RedisHandle).DoTransaction(cmds)
 			}
 		}
 	}
@@ -420,17 +431,19 @@ func (self *RedisCluster) SendClusterPipeline(cmds []ClusterTransaction) (reply 
 	// forward onto first redis in the handle
 	// if we are set to single mode
 	if self.SingleRedisMode == true {
-		for _, handle := range self.Handles {
+		// for _, handle := range self.Handles {
+		for item := range self.Handles.Iter() {
 			log.Debug("Running pipline...")
-			return handle.DoPipeline(cmds)
+			return item.Val.(*RedisHandle).DoPipeline(cmds)
 		}
 	}
 
 	if self.RefreshTableASAP == true {
 		self.HandleTableRefresh()
 		if self.SingleRedisMode == true {
-			for _, handle := range self.Handles {
-				return handle.DoPipeline(cmds)
+			// for _, handle := range self.Handles {
+			for item := range self.Handles.Iter() {
+				return item.Val.(*RedisHandle).DoPipeline(cmds)
 			}
 		}
 	}
@@ -675,8 +688,9 @@ func (self *RedisCluster) HandleForKey(key string) *RedisHandle {
 	// forward onto first redis in the handle
 	// if we are set to single mode
 	if self.SingleRedisMode == true {
-		for _, handle := range self.Handles {
-			return handle
+		// for _, handle := range self.Handles {
+		for item := range self.Handles.Iter() {
+			return item.Val.(*RedisHandle)
 		}
 	}
 	slot := self.SlotForKey(key)
