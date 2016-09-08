@@ -6,6 +6,7 @@ import "errors"
 import "math/rand"
 import "os"
 import "github.com/Sirupsen/logrus"
+import "github.com/streamrail/concurrent-map"
 
 const RedisClusterHashSlots = 16384
 const RedisClusterRequestTTL = 16
@@ -14,7 +15,7 @@ const RedisClusterDefaultTimeout = 1
 var log = logrus.New()
 
 type RedisCluster struct {
-	SeedHosts        map[string]bool
+	SeedHosts        cmap.ConcurrentMap //map[string]bool
 	Handles          map[string]*RedisHandle
 	Slots            map[uint16]string
 	RefreshTableASAP bool
@@ -32,7 +33,7 @@ func NewRedisCluster(seed_redii []map[string]string, poolConfig PoolConfig, debu
 	cluster := RedisCluster{
 		RefreshTableASAP: false,
 		SingleRedisMode:  !poolConfig.IsCluster,
-		SeedHosts:        make(map[string]bool),
+		SeedHosts:        cmap.New(), //make(map[string]bool),
 		Handles:          make(map[string]*RedisHandle),
 		Slots:            make(map[uint16]string),
 		poolConfig:       poolConfig,
@@ -46,13 +47,14 @@ func NewRedisCluster(seed_redii []map[string]string, poolConfig PoolConfig, debu
 	for _, redis := range seed_redii {
 		for host, port := range redis {
 			label := host + ":" + port
-			cluster.SeedHosts[label] = true
+			cluster.SeedHosts.Set(label, true)
 			cluster.Handles[label] = NewRedisHandle(host, port, poolConfig, debug)
 		}
 	}
 
-	for addr, _ := range cluster.SeedHosts {
-		node := cluster.addRedisHandleIfNeeded(addr)
+	//for addr, _ := range cluster.SeedHosts {
+	for item := range cluster.SeedHosts.Iter() {
+		node := cluster.addRedisHandleIfNeeded(item.Key)
 		cluster_enabled := cluster.hasClusterEnabled(node)
 		if cluster_enabled == false {
 			if len(cluster.SeedHosts) == 1 {
@@ -89,11 +91,12 @@ func (self *RedisCluster) populateSlotsCache() {
 	if self.Debug {
 		log.Info("[RedisCluster], PID", os.Getpid(), "[PopulateSlots Running]")
 	}
-	for name, _ := range self.SeedHosts {
+	//for name, _ := range self.SeedHosts {
+	for item := range self.SeedHosts.Iter() {
 		if self.Debug {
-			log.Info("[RedisCluster] [PopulateSlots] Checking: ", name)
+			log.Info("[RedisCluster] [PopulateSlots] Checking: ", item.Key)
 		}
-		node := self.addRedisHandleIfNeeded(name)
+		node := self.addRedisHandleIfNeeded(item.Key)
 		cluster_info, err := node.Do("CLUSTER", "NODES")
 		if err == nil {
 			lines := strings.Split(string(cluster_info.([]uint8)), "\n")
@@ -102,15 +105,15 @@ func (self *RedisCluster) populateSlotsCache() {
 					fields := strings.Split(line, " ")
 					addr := fields[1]
 					if addr == ":0" {
-						addr = name
+						addr = item.Key
 					}
 					// add to seedlist if not in cluster
-					_, seedlist_exists := self.SeedHosts[addr]
+					seedlist_exists := self.SeedHosts.Has(addr)
 					if !seedlist_exists {
-						self.SeedHosts[addr] = true
+						self.SeedHosts.Set(addr, true)
 					}
 					// add to handles if not in handles
-					self.addRedisHandleIfNeeded(name)
+					self.addRedisHandleIfNeeded(item.Key)
 
 					slots := fields[8:len(fields)]
 					for _, s_range := range slots {
@@ -133,7 +136,7 @@ func (self *RedisCluster) populateSlotsCache() {
 				log.Info("[RedisCluster] [Initializing] DONE, ",
 					"Slots: ", len(self.Slots),
 					"Handles So Far:", len(self.Handles),
-					"SeedList:", len(self.SeedHosts))
+					"SeedList:", self.SeedHosts.Count())
 			}
 			break
 		}
@@ -270,8 +273,9 @@ func (self *RedisCluster) disconnectAll() {
 		handle.Pool.Close()
 	}
 	// nuke handles
-	for addr, _ := range self.SeedHosts {
-		delete(self.Handles, addr)
+	//for addr, _ := range self.SeedHosts {
+	for item := range self.SeedHosts.Iter() {
+		delete(self.Handles, item.Key)
 	}
 	// nuke slots
 	self.Slots = make(map[uint16]string)
