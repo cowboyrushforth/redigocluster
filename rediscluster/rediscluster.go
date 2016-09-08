@@ -58,7 +58,7 @@ func NewRedisCluster(seed_redii []map[string]string, poolConfig PoolConfig, debu
 		node := cluster.addRedisHandleIfNeeded(item.Key)
 		cluster_enabled := cluster.hasClusterEnabled(node)
 		if cluster_enabled == false {
-			if len(cluster.SeedHosts) == 1 {
+			if cluster.SeedHosts.Count() == 1 {
 				cluster.SingleRedisMode = true
 			} else {
 				log.Fatal(errors.New("Multiple Seed Hosts Given, But Cluster Support Disabled in Redis"))
