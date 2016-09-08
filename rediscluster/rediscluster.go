@@ -135,8 +135,8 @@ func (self *RedisCluster) populateSlotsCache() {
 			}
 			if self.Debug {
 				log.Info("[RedisCluster] [Initializing] DONE, ",
-					"Slots: ", len(self.Slots),
-					"Handles So Far:", len(self.Handles),
+					"Slots: ", self.Slots.Count(),
+					"Handles So Far:", self.Handles.Count(),
 					"SeedList:", self.SeedHosts.Count())
 			}
 			break
@@ -149,9 +149,9 @@ func (self *RedisCluster) switchToSingleModeIfNeeded() {
 	// catch case where we really intend to be on
 	// single redis mode, but redis was not
 	// started on time
-	if len(self.SeedHosts) == 1 &&
-		len(self.Slots) == 0 &&
-		len(self.Handles) == 1 {
+	if self.SeedHosts.Count() == 1 &&
+		self.Slots.Count() == 0 &&
+		self.Handles.Count() == 1 {
 		//for _, node := range self.Handles {
 		for item := range self.Handles.Iter() {
 			cluster_enabled := self.hasClusterEnabled(item.Val.(*RedisHandle))
@@ -218,10 +218,10 @@ func (self *RedisCluster) SlotForKey(key string) uint16 {
 }
 
 func (self *RedisCluster) RandomRedisHandle() *RedisHandle {
-	if len(self.Handles) == 0 {
+	if self.Handles.Count() == 0 {
 		return nil
 	}
-	addrs := make([]string, len(self.Handles))
+	addrs := make([]string, self.Handles.Count())
 	i := 0
 	//for addr, _ := range self.Handles {
 	for item := range self.Handles.Iter() {
@@ -247,7 +247,7 @@ func (self *RedisCluster) RedisHandleForSlot(slot uint16) *RedisHandle {
 	// If we don't know what the mapping is, return a random node.
 	if !exists {
 		if self.Debug {
-			log.Info("[RedisCluster] No One Appears Responsible For Slot: ", slot, "our slotsize is: ", len(self.Slots))
+			log.Info("[RedisCluster] No One Appears Responsible For Slot: ", slot, "our slotsize is: ", self.Slots.Count())
 		}
 		return self.RandomRedisHandle()
 	}
@@ -273,7 +273,7 @@ func (self *RedisCluster) CloseConnection() {
 
 func (self *RedisCluster) disconnectAll() {
 	if self.Debug {
-		log.Info("[RedisCluster] PID:", os.Getpid(), " [Disconnect!] Had Handles:", len(self.Handles))
+		log.Info("[RedisCluster] PID:", os.Getpid(), " [Disconnect!] Had Handles:", self.Handles.Count())
 	}
 	// disconnect anyone in handles
 	// for _, handle := range self.Handles {
@@ -411,7 +411,7 @@ func (self *RedisCluster) SendClusterTransaction(cmds []ClusterTransaction) (rep
 				newaddr := errv[2]
 				self.Slots.Set(uint16(newslot), newaddr)
 				if self.Debug {
-					log.Info("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", len(self.Slots))
+					log.Info("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", self.Slots.Count())
 				}
 			}
 		} else {
@@ -528,7 +528,7 @@ func (self *RedisCluster) SendClusterPipeline(cmds []ClusterTransaction) (reply 
 				newaddr := errv[2]
 				self.Slots.Set(uint16(newslot), newaddr)
 				if self.Debug {
-					log.Info("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", len(self.Slots))
+					log.Info("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", self.Slots.Count())
 				}
 			}
 		} else {
@@ -648,7 +648,7 @@ func (self *RedisCluster) SendClusterCommand(flush bool, cmd string, args ...int
 				newaddr := errv[2]
 				self.Slots.Set(uint16(newslot), newaddr)
 				if self.Debug {
-					log.Info("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", len(self.Slots))
+					log.Info("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", self.Slots.Count())
 				}
 			}
 		} else {
