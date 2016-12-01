@@ -5,7 +5,7 @@ import "strconv"
 import "errors"
 import "math/rand"
 import "os"
-import "github.com/Sirupsen/logrus"
+import "github.com/TykTechnologies/logrus"
 import "github.com/streamrail/concurrent-map"
 import iMap "github.com/TykTechnologies/concurrent-map"
 
