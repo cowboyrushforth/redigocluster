@@ -221,11 +221,12 @@ func (self *RedisCluster) RandomRedisHandle() *RedisHandle {
 	if self.Handles.Count() == 0 {
 		return nil
 	}
-	addrs := make([]string, self.Handles.Count())
+
+	addrs := make([]string, 0)
 	i := 0
 	//for addr, _ := range self.Handles {
 	for item := range self.Handles.Iter() {
-		addrs[i] = item.Key
+		addrs = append(addrs, item.Key)
 		i++
 	}
 	rand_addrs := make([]string, i)
