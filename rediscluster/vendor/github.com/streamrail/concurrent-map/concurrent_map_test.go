@@ -3,6 +3,7 @@ package cmap
 import (
 	"encoding/json"
 	"hash/fnv"
+	"os"
 	"sort"
 	"strconv"
 	"testing"
@@ -334,10 +335,15 @@ func TestConcurrent(t *testing.T) {
 	}
 }
 
+func SetShardCount(shardCount int) {
+	shardCountStr := strconv.Itoa(shardCount)
+	os.Setenv(SHARD_COUNT_ENV, shardCountStr)
+}
+
 func TestJsonMarshal(t *testing.T) {
-	SHARD_COUNT = 2
+	SetShardCount(2)
 	defer func() {
-		SHARD_COUNT = 32
+		SetShardCount(32)
 	}()
 	expected := "{\"a\":1,\"b\":2}"
 	m := New()
