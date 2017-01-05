@@ -1,4 +1,4 @@
-package cmap
+package rediscluster
 
 import (
 	"encoding/json"
@@ -25,7 +25,7 @@ type ConcurrentMapShared struct {
 }
 
 // Creates a new concurrent map.
-func New() ConcurrentMap {
+func NewCmap() ConcurrentMap {
 	var nShards int
 	customShardCount = os.Getenv(SHARD_COUNT_ENV)
 	if customShardCount == "" {
