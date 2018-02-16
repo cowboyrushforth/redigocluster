@@ -11,12 +11,14 @@ type RedisHandle struct {
 }
 
 type PoolConfig struct {
-	MaxIdle     int
-	MaxActive   int
-	IdleTimeout time.Duration
-	Password    string
-	Database    int
-	IsCluster   bool
+	MaxIdle       int
+	MaxActive     int
+	IdleTimeout   time.Duration
+	Password      string
+	Database      int
+	IsCluster     bool
+	UseTLS        bool
+	TLSSkipVerify bool
 }
 
 // XXX: add some password protection - DONE
@@ -33,21 +35,9 @@ func NewRedisHandle(host string, port string, poolConfig PoolConfig, debug bool)
 			MaxActive:   poolConfig.MaxActive,
 			IdleTimeout: poolConfig.IdleTimeout,
 			Dial: func() (redis.Conn, error) {
-				c, err := redis.Dial("tcp", host+":"+port)
+				c, err := redis.Dial("tcp", host+":"+port, redis.DialUseTLS(poolConfig.UseTLS), redis.DialTLSSkipVerify(poolConfig.TLSSkipVerify), redis.DialPassword(poolConfig.Password), redis.DialDatabase(poolConfig.Database))
 				if err != nil {
 					return nil, err
-				}
-				if poolConfig.Password != "" {
-					if _, err := c.Do("AUTH", poolConfig.Password); err != nil {
-						c.Close()
-						return nil, err
-					}
-				}
-				if poolConfig.Database > 0 {
-					if _, err := c.Do("SELECT", poolConfig.Database); err != nil {
-						c.Close()
-						return nil, err
-					}
 				}
 				return c, nil
 			},
