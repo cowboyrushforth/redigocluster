@@ -179,12 +179,14 @@ func (self *RedisCluster) addRedisHandleIfNeeded(addr string) *RedisHandle {
 	return item.(*RedisHandle)
 }
 
+//Goroutine safe setter for SingleRedisMode field
 func (self *RedisCluster) SetSingleRedisMode(newValue bool) {
 	self.muSingleRedisMode.Lock()
 	self.singleRedisMode = newValue
 	self.muSingleRedisMode.Unlock()
 }
 
+//Goroutine safe getter for SingleRedisMode field
 func (self *RedisCluster) SingleRedisMode() bool {
 	self.muSingleRedisMode.RLock()
 	defer self.muSingleRedisMode.RUnlock()
