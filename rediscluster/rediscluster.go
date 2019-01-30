@@ -24,7 +24,7 @@ type RedisCluster struct {
 	poolConfig       PoolConfig
 	Debug            bool
 
-	muSingleRedisMode *sync.RWMutex
+	muSingleRedisMode sync.RWMutex
 }
 
 type ClusterTransaction struct {
@@ -41,7 +41,6 @@ func NewRedisCluster(seed_redii []map[string]string, poolConfig PoolConfig, debu
 		Slots:             iMap.New(), // make(map[uint16]string),
 		poolConfig:        poolConfig,
 		Debug:             debug,
-		muSingleRedisMode: &sync.RWMutex{},
 	}
 
 	if cluster.Debug {
